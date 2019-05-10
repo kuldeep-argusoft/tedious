@@ -1,5 +1,9 @@
+"use strict";
+
 const net = require('net');
+
 const dns = require('dns');
+
 const punycode = require('punycode');
 
 class Connector {
@@ -19,19 +23,16 @@ class Connector {
   executeForIP(cb) {
     const socket = net.connect(this.options);
 
-    const onError = (err) => {
+    const onError = err => {
       socket.removeListener('error', onError);
       socket.removeListener('connect', onConnect);
-
       socket.destroy();
-
       cb(err);
     };
 
     const onConnect = () => {
       socket.removeListener('error', onError);
       socket.removeListener('connect', onConnect);
-
       cb(null, socket);
     };
 
@@ -40,7 +41,7 @@ class Connector {
   }
 
   executeForHostname(cb) {
-    dns.lookup(punycode.toASCII(this.options.host), { all: true }, (err, addresses) => {
+    dns.resolve(punycode.toASCII(this.options.host),  'A' , (err, addresses) => {
       if (err) {
         return cb(err);
       }
@@ -52,6 +53,7 @@ class Connector {
       }
     });
   }
+
 }
 
 class ParallelConnectionStrategy {
@@ -63,11 +65,10 @@ class ParallelConnectionStrategy {
   connect(callback) {
     const addresses = this.addresses;
     const sockets = new Array(addresses.length);
-
     let errorCount = 0;
-    const onError = function(err) {
-      errorCount += 1;
 
+    const onError = function onError(err) {
+      errorCount += 1;
       this.removeListener('error', onError);
       this.removeListener('connect', onConnect);
 
@@ -76,7 +77,7 @@ class ParallelConnectionStrategy {
       }
     };
 
-    const onConnect = function() {
+    const onConnect = function onConnect() {
       for (let j = 0; j < sockets.length; j++) {
         const socket = sockets[j];
 
@@ -94,13 +95,15 @@ class ParallelConnectionStrategy {
 
     for (let i = 0, len = addresses.length; i < len; i++) {
       const socket = sockets[i] = net.connect(Object.create(this.options, {
-        host: { value: addresses[i].address }
+        host: {
+          value: addresses[i]
+        }
       }));
-
       socket.on('error', onError);
       socket.on('connect', onConnect);
     }
   }
+
 }
 
 class SequentialConnectionStrategy {
@@ -111,37 +114,35 @@ class SequentialConnectionStrategy {
 
   connect(callback) {
     const addresses = this.addresses;
-
     if (!addresses.length) {
       callback(new Error('Could not connect (sequence)'));
       return;
     }
 
     const next = addresses.shift();
-
     const socket = net.connect(Object.create(this.options, {
-      host: { value: next.address }
+      host: {
+        value: next
+      }
     }));
 
-    const onError = (err) => {
+    const onError = err => {
       socket.removeListener('error', onError);
       socket.removeListener('connect', onConnect);
-
       socket.destroy();
-
       this.connect(callback);
     };
 
     const onConnect = () => {
       socket.removeListener('error', onError);
       socket.removeListener('connect', onConnect);
-
       callback(null, socket);
     };
 
     socket.on('error', onError);
     socket.on('connect', onConnect);
   }
+
 }
 
 module.exports.Connector = Connector;
